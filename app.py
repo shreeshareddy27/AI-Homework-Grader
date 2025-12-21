@@ -1,157 +1,59 @@
 import os
-import json
 import streamlit as st
+from openai import OpenAI
 
-# ---------- File reading helpers ----------
-def extract_text_from_txt(uploaded_file) -> str:
-    return uploaded_file.read().decode("utf-8", errors="ignore")
-
-def extract_text_from_pdf(uploaded_file) -> str:
-    # Text-based PDFs (not scanned) will work well with this.
-    from pypdf import PdfReader
-    reader = PdfReader(uploaded_file)
-    parts = []
-    for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts).strip()
-
-def extract_text_from_image(uploaded_file) -> str:
-    from PIL import Image
-    import pytesseract
-
-    img = Image.open(uploaded_file).convert("RGB")
-    text = pytesseract.image_to_string(img)
-    return text.strip()
-
-# ---------- LLM grading ----------
-def grade_with_llm(student_text: str, rubric: str, max_marks: int):
-    # Uses OpenAI key from Streamlit secrets or environment
-    api_key = st.secrets.get("OPENAI_API_KEY", None) or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        st.error("OPENAI_API_KEY not found. Add it in Streamlit → Manage app → Settings → Secrets.")
+# --- OpenAI client ---
+def get_client():
+    key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not key:
+        st.error("Missing OPENAI_API_KEY. Add it in Streamlit → Settings → Secrets.")
         st.stop()
+    return OpenAI(api_key=key)
 
-    # OpenAI SDK (v1 style)
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+client = get_client()
 
-    system = (
-        "You are an assistant that grades homework based on a rubric. "
-        "Return ONLY valid JSON with keys: score, max_score, feedback, improvements, summary."
-    )
-
-    user = f"""
-RUBRIC:
-{rubric}
-
-MAX SCORE: {max_marks}
-
-STUDENT SUBMISSION (extracted text):
-{student_text}
-
-Grade strictly using the rubric.
-Rules:
-- score must be an integer from 0 to max_score.
-- feedback: bullet-style, specific, reference what is missing/wrong.
-- improvements: 3-6 actionable bullets.
-- summary: 1-2 lines.
-Return ONLY JSON (no markdown).
-"""
-
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.2,
-    )
-
-    raw = resp.choices[0].message.content.strip()
-
-    # Try to parse JSON even if model adds extra text
-    try:
-        return json.loads(raw)
-    except Exception:
-        # fallback: find first { ... } block
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(raw[start:end+1])
-        raise
-
-# ---------- UI ----------
-st.set_page_config(page_title="AI Homework Grader", layout="centered")
+# --- UI ---
 st.title("AI Homework Grader")
 
-st.write("Upload homework → extract text (PDF/Image/Text) → grade + feedback")
-
-rubric = st.text_area(
-    "Rubric / Answer key (paste here)",
-    placeholder="Example: \n- 2 marks: correct SQL CREATE TABLE...\n- 3 marks: constraints...\n- ...",
-    height=180
-)
-
-max_marks = st.number_input("Max marks", min_value=1, max_value=200, value=10, step=1)
+rubric = st.text_area("Rubric / Answer key (paste here)", height=160)
+max_marks = st.number_input("Max marks", min_value=1, value=10)
 
 uploaded = st.file_uploader(
     "Upload your homework (PDF / Image / Text)",
     type=["pdf", "png", "jpg", "jpeg", "txt"]
 )
 
-if not uploaded:
-    st.info("Upload a file to start grading.")
-    st.stop()
+grade_now = st.button("Grade now")
 
-st.success(f"Uploaded: {uploaded.name}")
+if uploaded and grade_now:
+    st.write("File received. Grading now...")
 
-# Extract text
-with st.spinner("Extracting text..."):
-    extracted = ""
-    try:
-        if uploaded.type == "text/plain" or uploaded.name.lower().endswith(".txt"):
-            extracted = extract_text_from_txt(uploaded)
-        elif uploaded.type == "application/pdf" or uploaded.name.lower().endswith(".pdf"):
-            extracted = extract_text_from_pdf(uploaded)
-        else:
-            extracted = extract_text_from_image(uploaded)
-    except Exception as e:
-        st.error(f"Text extraction failed: {e}")
-        st.stop()
+    # TODO: extracted_text = extract_text(uploaded)
+    extracted_text = "REPLACE_WITH_EXTRACTED_TEXT"
 
-if not extracted or len(extracted.strip()) < 10:
-    st.warning("I extracted very little text. If this is a scanned PDF/image, OCR might be needed (image upload works best right now).")
-else:
-    with st.expander("Preview extracted text"):
-        st.text_area("Extracted text", extracted, height=250)
+    prompt = f"""
+You are an automated homework grader.
 
-# Grade button
-if st.button("Grade now"):
-    if not rubric.strip():
-        st.error("Please paste a rubric/answer key first.")
-        st.stop()
+Rubric/Answer key:
+{rubric}
+
+Student submission:
+{extracted_text}
+
+Return JSON with:
+score (number),
+max_score (number),
+summary (string),
+feedback (string),
+improvements (array of strings).
+Score must be out of {int(max_marks)}.
+"""
 
     with st.spinner("Grading with AI..."):
-        try:
-            result = grade_with_llm(extracted, rubric, int(max_marks))
-        except Exception as e:
-            st.error(f"LLM grading failed: {e}")
-            st.stop()
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
 
-    st.subheader("Result")
-    st.metric("Score", f"{result.get('score')}/{result.get('max_score')}")
-
-    st.write("### Summary")
-    st.write(result.get("summary", ""))
-
-    st.write("### Feedback")
-    fb = result.get("feedback", "")
-    st.write(fb)
-
-    st.write("### Improvements")
-    imp = result.get("improvements", "")
-    if isinstance(imp, list):
-        for x in imp:
-            st.write(f"- {x}")
-    else:
-        st.write(imp)
+    st.write(resp.choices[0].message.content)
