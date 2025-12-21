@@ -1,5 +1,5 @@
 streamlit
-oogle-genai
+google-genai
 pypdf
 pillow
 pytesseract
