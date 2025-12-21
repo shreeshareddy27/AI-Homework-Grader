@@ -12,6 +12,22 @@ def get_client():
 
 client = get_client()
 
+# ===== ADD TEST BUTTON RIGHT HERE =====
+st.divider()
+if st.button("🔌 Test OpenAI key"):
+    try:
+        r = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+            temperature=0,
+        )
+        st.success(r.choices[0].message.content)
+    except Exception as e:
+        st.error("OpenAI call failed:")
+        st.exception(e)
+st.divider()
+# =====================================
+
 # --- UI ---
 st.title("AI Homework Grader")
 
