@@ -1,34 +1,41 @@
 import os
+import json
 import streamlit as st
-from openai import OpenAI
+from google import genai
 
-# --- OpenAI client ---
+# --- Gemini client ---
 def get_client():
-    key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not key:
-        st.error("Missing OPENAI_API_KEY. Add it in Streamlit → Settings → Secrets.")
+        st.error("Missing GEMINI_API_KEY. Add it in Streamlit → Settings → Secrets.")
         st.stop()
-    return OpenAI(api_key=key)
+    return genai.Client(api_key=key)
 
 client = get_client()
 
-# ===== ADD TEST BUTTON RIGHT HERE =====
-st.divider()
-if st.button("🔌 Test OpenAI key"):
-    try:
-        r = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": "Reply with exactly: OK"}],
-            temperature=0,
-        )
-        st.success(r.choices[0].message.content)
-    except Exception as e:
-        st.error("OpenAI call failed:")
-        st.exception(e)
-st.divider()
-# =====================================
 
-# --- UI ---
+# ----------------------------
+# Test button (confirm key works)
+# ----------------------------
+st.divider()
+
+if st.button("Test Gemini key"):
+    try:
+        resp = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents="Reply with exactly: OK"
+        )
+        st.success(resp.text)
+    except Exception as e:
+        st.error("Gemini call failed")
+        st.exception(e)
+
+st.divider()
+
+
+# ----------------------------
+# UI
+# ----------------------------
 st.title("AI Homework Grader")
 
 rubric = st.text_area("Rubric / Answer key (paste here)", height=160)
@@ -36,40 +43,94 @@ max_marks = st.number_input("Max marks", min_value=1, value=10)
 
 uploaded = st.file_uploader(
     "Upload your homework (PDF / Image / Text)",
-    type=["pdf", "png", "jpg", "jpeg", "txt"]
+    type=["pdf", "png", "jpg", "jpeg", "txt"],
 )
 
 grade_now = st.button("Grade now")
 
+
+# ----------------------------
+# Helper: parse JSON safely
+# ----------------------------
+def parse_json(text: str):
+    text = text.strip()
+    # Try direct JSON first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # If model wrapped JSON in extra text, try extracting first {...}
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start : end + 1])
+        raise
+
+
+# ----------------------------
+# Main grading
+# ----------------------------
 if uploaded and grade_now:
     st.write("File received. Grading now...")
 
-    # TODO: extracted_text = extract_text(uploaded)
+    # TODO: Replace this with your real OCR/extraction output
     extracted_text = "REPLACE_WITH_EXTRACTED_TEXT"
+
+    if not rubric.strip():
+        st.error("Please paste a rubric / answer key.")
+        st.stop()
+
+    if not extracted_text.strip() or extracted_text == "REPLACE_WITH_EXTRACTED_TEXT":
+        st.error("Extraction text is missing. Replace REPLACE_WITH_EXTRACTED_TEXT with your OCR output.")
+        st.stop()
 
     prompt = f"""
 You are an automated homework grader.
+
+Return STRICT JSON only (no markdown, no extra text).
+
+Schema:
+{{
+  "score": <number between 0 and {int(max_marks)}>,
+  "max_score": {int(max_marks)},
+  "summary": "<1-2 sentence overall evaluation>",
+  "feedback": "<clear feedback paragraph>",
+  "improvements": ["...", "..."]
+}}
 
 Rubric/Answer key:
 {rubric}
 
 Student submission:
 {extracted_text}
-
-Return JSON with:
-score (number),
-max_score (number),
-summary (string),
-feedback (string),
-improvements (array of strings).
-Score must be out of {int(max_marks)}.
 """
 
-    with st.spinner("Grading with AI..."):
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
+    with st.spinner("Grading with Gemini..."):
+        try:
+            resp = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt,
+            )
+            raw = resp.text
+            result = parse_json(raw)
 
-    st.write(resp.choices[0].message.content)
+        except Exception as e:
+            st.error("Grading failed:")
+            st.exception(e)
+            st.stop()
+
+    # Display nicely
+    st.success("Done")
+    st.metric("Score", f'{result.get("score", "?")} / {result.get("max_score", int(max_marks))}')
+
+    st.write("### Summary")
+    st.write(result.get("summary", ""))
+
+    st.write("### Feedback")
+    st.write(result.get("feedback", ""))
+
+    st.write("### Improvements")
+    for item in result.get("improvements", []):
+        st.write(f"- {item}")
+
+    with st.expander("Show raw JSON"):
+        st.code(json.dumps(result, indent=2))
