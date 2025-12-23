@@ -1,0 +1,26 @@
+# 📝 AI Homework Grader (Ollama)
+
+A local-first AI homework grading application built with **Streamlit** and **Ollama**.  
+Supports **PDF**, **Images (OCR)**, and **TXT** files, and returns a structured **score, summary, feedback, and improvements** based on a custom rubric.
+
+---
+
+## ✨ Features
+- 📄 Upload homework: PDF / Image / TXT
+- 🔍 OCR support using Tesseract
+- 🧠 Local AI grading with Ollama (llama3.1)
+- 📊 Clear scoring and feedback output
+- 🎨 Clean and modern Streamlit UI
+
+---
+
+## 🛠 Tech Stack
+Python · Streamlit · Ollama · pypdf · pytesseract · Pillow · requests
+
+---
+
+## 🚀 Run Locally
+
+### 1. Install dependencies
+```bash
+pip install -r requirements.txt
