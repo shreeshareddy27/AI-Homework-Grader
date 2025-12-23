@@ -4,6 +4,8 @@ A local-first AI homework grading application built with **Streamlit** and **Oll
 Supports **PDF**, **Images (OCR)**, and **TXT** files, and returns a structured **score, summary, feedback, and improvements** based on a custom rubric.
 
 ---
+Currently uses Ollama (llama3.1). Earlier experiments with other LLMs were exploratory and are no longer part of the codebase.
+
 
 ## ✨ Features
 - 📄 Upload homework: PDF / Image / TXT
