@@ -24,3 +24,6 @@ Python · Streamlit · Ollama · pypdf · pytesseract · Pillow · requests
 ### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
+## 📸 Screenshot
+
+![AI Homework Grader UI](screenshots/ui_screenshot.png)
