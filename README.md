@@ -24,3 +24,8 @@ Python · Streamlit · Ollama · pypdf · pytesseract · Pillow · requests
 ### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
+
+### System Requirements
+- Ollama (local LLM server)
+- Tesseract OCR (for image text extraction)
+
